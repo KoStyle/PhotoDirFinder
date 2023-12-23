@@ -1,5 +1,6 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using System.Reflection;
+using System.IO;
 
 Console.WriteLine("Hello, World!");
 
@@ -67,7 +68,8 @@ void copiarSubdirectorio(DirectoryInfo di, string rutaDestino)
 
     foreach (FileInfo fi in di.GetFiles())
     {
-        fi.MoveTo(Path.Combine(rutaDestino, fi.Name));
+        if (fi.Name != "thumbs.db")
+            fi.MoveTo(Path.Combine(rutaDestino, fi.Name));
     }
 }
 
@@ -85,58 +87,82 @@ void copiarSubdirectorio(DirectoryInfo di, string rutaDestino)
 
 string rutaBase = @"Z:\importBay\";
 string rutaDestino = @"Z:\family_media\";
+string cacheDirectory = "ca.che";
 List<string> Ddirs = Directory.GetDirectories(rutaBase, "D*", SearchOption.TopDirectoryOnly).ToList();
 
 
 List<DirectoryInfo> imageDirs = new List<DirectoryInfo>();
 
-List<string> dirsSinSubs = Directory.EnumerateDirectories(Ddirs[5], "*.*", SearchOption.AllDirectories)
-     .Where(f => !Directory.EnumerateDirectories(f, "*.*", SearchOption.TopDirectoryOnly).Any()).ToList();
+imageDirs = CacheDirs(Ddirs, cacheDirectory);
 
-foreach (string dir in dirsSinSubs)
+int j = 0;
+foreach (DirectoryInfo dir in imageDirs)
 {
-    DirectoryInfo dirInfo = new DirectoryInfo(dir);
-    List<FileInfo> files =
-    [
-        .. dirInfo.GetFiles("*.jpg"),
-        .. dirInfo.GetFiles("*.jpeg"),
-        .. dirInfo.GetFiles("*.png"),
-    ];
-    if (files.Count > 5)
+    Console.WriteLine($"Copiando directorio {j}/{imageDirs.Count}: {dir.Name}");
+    var rutaVieja = dir.FullName;
+    var rutaNueva = rutaDestino + dir.Name;
+    try
     {
-        imageDirs.Add(dirInfo);
+        copiarSubdirectorio(dir, rutaNueva);
     }
-    Console.WriteLine(dir);
+    catch (IOException ex)
+    {
+        int i = 0;
+        while (Directory.Exists(rutaNueva))
+        {
+            i++;
+            rutaNueva = rutaDestino + dir.Name + $"_{i}";
+        }
+        copiarSubdirectorio(dir, rutaNueva);
+    }
+    catch (Exception ex) { Console.WriteLine(ex); }
+    finally
+    {
+        File.WriteAllText(rutaNueva + "\\TNS_DISK_origin.txt", rutaVieja);
+    }
+    j++;
 }
 
-using (StreamWriter outputFile = new StreamWriter("dirImagenes"))
+
+static List<DirectoryInfo> CacheDirs(List<string> Ddirs, string cacheFile)
 {
-    int j = 0;
-    foreach (DirectoryInfo dir in imageDirs)
+    List<DirectoryInfo> imageDirs = new List<DirectoryInfo>();
+    List<string> dirsSinSubs = new List<string>();
+
+    if (File.Exists(cacheFile))
     {
-        Console.WriteLine($"Copiando directorio {j}/{imageDirs.Count}: {dir.Name}");
-        var rutaVieja = dir.FullName;
-        var rutaNueva = rutaDestino + dir.Name;
-        try
-        {
-            copiarSubdirectorio(dir, rutaNueva);
-        }
-        catch (IOException ex)
-        {
-            int i = 0;
-            while (Directory.Exists(rutaNueva))
-            {
-                i++;
-                rutaNueva = rutaDestino + dir.Name + $"_{i}";
-            }
-            copiarSubdirectorio(dir, rutaNueva);
-        }
-        catch (Exception ex) { Console.WriteLine(ex); }
-        finally
-        {
-            File.WriteAllText(rutaNueva + "\\TNS_DISK_origin.txt", rutaVieja);
-        }
-        j++;
+        var listaCache = File.ReadAllLines(cacheFile).ToList();
+        listaCache.ForEach(d => imageDirs.Add(new DirectoryInfo(d)));
+        return imageDirs;
     }
 
+    //Buscamos todos los directorios hoja que tengan contenido (el que sea)
+    foreach (string dir in Ddirs)
+    {
+        dirsSinSubs.AddRange(Directory.EnumerateDirectories(dir, "*.*", SearchOption.AllDirectories)
+             .Where(f => !Directory.EnumerateDirectories(f, "*.*", SearchOption.TopDirectoryOnly).Any()).ToList());
+    }
+
+    //Filtramos los directorios que tienen estas extensiones, al menos 3
+    foreach (string dir in dirsSinSubs)
+    {
+        DirectoryInfo dirInfo = new DirectoryInfo(dir);
+        List<FileInfo> files =
+        [
+            .. dirInfo.GetFiles("*.jpg"),
+            .. dirInfo.GetFiles("*.jpeg"),
+            .. dirInfo.GetFiles("*.png"),
+        ];
+        if (files.Count > 3)
+        {
+            imageDirs.Add(dirInfo);
+        }
+        Console.WriteLine(dir);
+    }
+
+    List<string> stringDirs = new List<string>();
+    imageDirs.ForEach(d => stringDirs.Add(d.FullName));
+    File.WriteAllLines(cacheFile, stringDirs);
+
+    return imageDirs;
 }
